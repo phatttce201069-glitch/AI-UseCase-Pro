@@ -127,6 +127,45 @@ export default function Home() {
   
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<any[]>([]);
+
+  // Load history on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('usecase_history');
+    if (saved) setHistory(JSON.parse(saved));
+  }, []);
+
+  const handleSave = () => {
+    if (nodes.length === 0) return alert("Không có gì để lưu! Hãy tạo sơ đồ trước.");
+    const newItem = {
+      id: Date.now().toString(),
+      timestamp: new Date().toLocaleString(),
+      userStory: userStory.substring(0, 60) + (userStory.length > 60 ? "..." : ""),
+      nodes,
+      edges,
+      originalStory: userStory
+    };
+    const updated = [newItem, ...history];
+    setHistory(updated);
+    localStorage.setItem('usecase_history', JSON.stringify(updated));
+    alert("💾 Đã lưu bản vẽ thành công!");
+  };
+
+  const loadHistoryItem = (item: any) => {
+    setNodes(item.nodes);
+    setEdges(item.edges);
+    setUserStory(item.originalStory || item.userStory);
+    setShowHistory(false);
+  };
+
+  const deleteHistoryItem = (e: any, id: string) => {
+    e.stopPropagation();
+    const updated = history.filter(h => h.id !== id);
+    setHistory(updated);
+    localStorage.setItem('usecase_history', JSON.stringify(updated));
+  };
 
   // Fetch available models on load
   useEffect(() => {
@@ -317,18 +356,38 @@ Là một khách hàng, tôi muốn thêm vào giỏ hàng (include đăng nhậ
           />
         </div>
         
-        <button 
-          onClick={handleGenerate}
-          disabled={loading}
-          className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold py-3.5 rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
-        >
-          {loading ? (
-             <>
-               <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-               Đang phân tích AI...
-             </>
-          ) : "✨ Phân Tích & Render Canvas"}
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={handleGenerate}
+            disabled={loading}
+            className="flex-grow bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold py-3.5 rounded-lg hover:shadow-lg transition-all disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
+          >
+            {loading ? (
+               <>
+                 <svg className="animate-spin -ml-1 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+               </>
+            ) : "✨ Phân Tích"}
+          </button>
+          
+          <button 
+            onClick={handleSave}
+            title="Lưu bản vẽ hiện tại"
+            className="bg-green-600 text-white font-bold px-4 rounded-lg hover:bg-green-700 hover:shadow-lg transition-all"
+          >
+            💾
+          </button>
+          
+          <button 
+            onClick={() => setShowHistory(true)}
+            title="Mở lịch sử bản vẽ"
+            className="bg-slate-700 text-white font-bold px-4 rounded-lg hover:bg-slate-800 hover:shadow-lg transition-all relative"
+          >
+            📂
+            {history.length > 0 && (
+              <span className="absolute -top-2 -right-2 bg-red-500 text-xs rounded-full w-5 h-5 flex items-center justify-center">{history.length}</span>
+            )}
+          </button>
+        </div>
       </div>
       
       {/* Canvas Phải */}
@@ -362,6 +421,53 @@ Là một khách hàng, tôi muốn thêm vào giỏ hàng (include đăng nhậ
           />
         </ReactFlow>
       </div>
+
+      {/* History Modal */}
+      {showHistory && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className={`w-full max-w-2xl rounded-2xl shadow-2xl p-6 flex flex-col max-h-[80vh] ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-800'}`}>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold flex items-center gap-2">📂 Lịch sử thiết kế</h2>
+              <button onClick={() => setShowHistory(false)} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+            
+            <div className="overflow-y-auto flex-grow pr-2">
+              {history.length === 0 ? (
+                <div className="text-center py-10 opacity-50">
+                  Chưa có bản vẽ nào được lưu.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {history.map((item) => (
+                    <div 
+                      key={item.id} 
+                      onClick={() => loadHistoryItem(item)}
+                      className={`p-4 rounded-xl border cursor-pointer hover:shadow-md transition-all flex justify-between items-center group ${isDarkMode ? 'border-slate-700 hover:bg-slate-700' : 'border-gray-200 hover:bg-blue-50 hover:border-blue-200'}`}
+                    >
+                      <div className="flex-grow">
+                        <div className="text-xs font-bold text-blue-500 mb-1">{item.timestamp}</div>
+                        <div className={`text-sm italic ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>"{item.userStory}"</div>
+                        <div className="text-xs mt-2 font-semibold opacity-60">
+                          {item.nodes.filter((n:any) => n.type==='actorNode').length} Actors • {item.nodes.filter((n:any) => n.type==='useCaseNode').length} Use Cases
+                        </div>
+                      </div>
+                      <button 
+                        onClick={(e) => deleteHistoryItem(e, item.id)}
+                        className="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:bg-red-100 rounded-full transition-all ml-4"
+                        title="Xóa"
+                      >
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path></svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
