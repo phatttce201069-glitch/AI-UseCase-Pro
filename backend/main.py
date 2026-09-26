@@ -183,6 +183,60 @@ Dữ liệu JSON gốc:
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class EditRequest(BaseModel):
+    chat_message: str
+    current_diagram: UseCaseDiagram
+    api_key: Optional[str] = None
+    language: str = "Vietnamese"
+    model_name: Optional[str] = None
+
+@app.post("/api/edit", response_model=UseCaseDiagram)
+async def edit_diagram(req: EditRequest):
+    key = get_api_key(req.api_key)
+    try:
+        selected_model = req.model_name
+        if not selected_model:
+            selected_model = "models/gemini-1.5-pro"
+        elif not selected_model.startswith("models/"):
+            selected_model = f"models/{selected_model}"
+
+        prompt_editor = f"""
+Bạn là chuyên gia System Architect. Dưới đây là cấu trúc biểu đồ Use Case hiện tại (định dạng JSON).
+Khách hàng có một yêu cầu chỉnh sửa: "{req.chat_message}"
+
+Nhiệm vụ của bạn:
+1. Phân tích yêu cầu và CHỈ thay đổi/thêm/bớt những phần được yêu cầu. 
+2. TUYỆT ĐỐI giữ nguyên các thành phần khác không liên quan. Không tự ý xóa, không tự ý bịa thêm.
+3. Nếu thêm Use Case mới, hãy tạo một `id` duy nhất (ví dụ: `uc_new_1`).
+4. Ngôn ngữ của dữ liệu trả về phải thống nhất với ngôn ngữ gốc hoặc theo ngôn ngữ yêu cầu.
+5. Trả về kết quả là chuỗi JSON NẰM TRONG CẶP DẤU ```json và ``` theo đúng cấu trúc ban đầu.
+
+Dữ liệu JSON gốc:
+{json.dumps(req.current_diagram.dict(), ensure_ascii=False)}
+"""
+        generate_url = f"https://generativelanguage.googleapis.com/v1beta/{selected_model}:generateContent?key={key}"
+        
+        payload = {
+            "contents": [{"parts": [{"text": prompt_editor}]}],
+            "generationConfig": {"temperature": 0.1}
+        }
+        res = requests.post(generate_url, json=payload)
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail=f"Lỗi từ Editor AI: {res.text}")
+            
+        raw_text = res.json()['candidates'][0]['content']['parts'][0]['text']
+        
+        import re
+        match = re.search(r'```json\s*(.*?)\s*```', raw_text, re.DOTALL)
+        clean_text = match.group(1) if match else raw_text.replace("```json", "").replace("```", "").strip()
+        
+        parsed_json = json.loads(clean_text)
+        validated_data = UseCaseDiagram(**parsed_json)
+        return validated_data
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/")
 def read_root():
     return {"message": "AI Use Case Architect API is running!"}

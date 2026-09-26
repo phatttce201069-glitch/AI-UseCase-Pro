@@ -128,6 +128,10 @@ export default function Home() {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   
+  const [rawDiagramData, setRawDiagramData] = useState<any>(null);
+  const [chatMessage, setChatMessage] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
 
@@ -145,7 +149,8 @@ export default function Home() {
       userStory: userStory.substring(0, 60) + (userStory.length > 60 ? "..." : ""),
       nodes,
       edges,
-      originalStory: userStory
+      originalStory: userStory,
+      rawDiagramData
     };
     const updated = [newItem, ...history];
     setHistory(updated);
@@ -157,6 +162,7 @@ export default function Home() {
     setNodes(item.nodes);
     setEdges(item.edges);
     setUserStory(item.originalStory || item.userStory);
+    setRawDiagramData(item.rawDiagramData || null);
     setShowHistory(false);
   };
 
@@ -193,30 +199,7 @@ export default function Home() {
     setNodes((nds) => nds.map((node) => ({ ...node, data: { ...node.data, isDarkMode } })));
   }, [isDarkMode, setNodes]);
 
-  const handleGenerate = async () => {
-    if (!userStory) return alert("Vui lòng nhập User Story!");
-    setLoading(true);
-    
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const res = await fetch(`${baseUrl}/api/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          api_key: apiKey || null, 
-          user_story: userStory, 
-          language: language,
-          model_name: modelName
-        })
-      });
-      
-      if (!res.ok) {
-         const err = await res.json();
-         throw new Error(err.detail || "Có lỗi xảy ra từ máy chủ");
-      }
-      
-      const data = await res.json();
-      
+  const renderDiagram = (data: any) => {
       const newNodes: any[] = [];
       const newEdges: any[] = [];
       
@@ -278,11 +261,73 @@ export default function Home() {
       
       setNodes(layoutedNodes);
       setEdges(layoutedEdges);
+      setRawDiagramData(data);
+  };
+
+  const handleGenerate = async () => {
+    if (!userStory) return alert("Vui lòng nhập User Story!");
+    setLoading(true);
+    
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${baseUrl}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          api_key: apiKey || null, 
+          user_story: userStory, 
+          language: language,
+          model_name: modelName
+        })
+      });
+      
+      if (!res.ok) {
+         const err = await res.json();
+         throw new Error(err.detail || "Có lỗi xảy ra từ máy chủ");
+      }
+      
+      const data = await res.json();
+      renderDiagram(data);
       
     } catch (err: any) {
       alert("Lỗi: " + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleChatEdit = async () => {
+    if (!chatMessage) return;
+    if (!rawDiagramData) return alert("Bạn cần tạo sơ đồ trước khi yêu cầu chỉnh sửa!");
+    
+    setChatLoading(true);
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${baseUrl}/api/edit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          api_key: apiKey || null, 
+          chat_message: chatMessage,
+          current_diagram: rawDiagramData,
+          language: language,
+          model_name: modelName
+        })
+      });
+      
+      if (!res.ok) {
+         const err = await res.json();
+         throw new Error(err.detail || "Lỗi khi gọi API chỉnh sửa");
+      }
+      
+      const data = await res.json();
+      renderDiagram(data);
+      setChatMessage(""); // Xóa tin nhắn cũ sau khi chạy xong
+      
+    } catch (err: any) {
+      alert("Lỗi chỉnh sửa: " + err.message);
+    } finally {
+      setChatLoading(false);
     }
   };
 
@@ -420,6 +465,37 @@ Là một khách hàng, tôi muốn thêm vào giỏ hàng (include đăng nhậ
             className={`rounded-lg shadow-md ${isDarkMode ? 'bg-slate-800' : 'bg-white'} border-none`}
           />
         </ReactFlow>
+
+        {/* Khung Chat AI */}
+        {rawDiagramData && (
+          <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 w-full max-w-2xl z-50">
+            <div className={`p-2 rounded-2xl shadow-2xl border flex items-center gap-2 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 shadow-slate-900/50' : 'bg-white border-gray-200 shadow-gray-200/50'}`}>
+              <div className="pl-3 opacity-50">
+                ✨
+              </div>
+              <input 
+                type="text"
+                placeholder="Yêu cầu AI sửa bản vẽ (VD: Thêm 'Đăng xuất' cho Khách hàng)..."
+                value={chatMessage}
+                onChange={(e) => setChatMessage(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleChatEdit()}
+                disabled={chatLoading}
+                className={`flex-grow p-2 bg-transparent outline-none font-medium ${isDarkMode ? 'text-white placeholder-slate-500' : 'text-gray-800 placeholder-gray-400'}`}
+              />
+              <button 
+                onClick={handleChatEdit}
+                disabled={chatLoading || !chatMessage.trim()}
+                className="p-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:shadow-lg disabled:opacity-50 transition-all flex items-center justify-center min-w-[48px]"
+              >
+                {chatLoading ? (
+                  <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* History Modal */}
