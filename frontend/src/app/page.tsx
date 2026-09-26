@@ -162,7 +162,39 @@ export default function Home() {
     setNodes(item.nodes);
     setEdges(item.edges);
     setUserStory(item.originalStory || item.userStory);
-    setRawDiagramData(item.rawDiagramData || null);
+    
+    if (item.rawDiagramData) {
+      setRawDiagramData(item.rawDiagramData);
+    } else {
+      // Phục hồi dữ liệu cho các bản vẽ cũ (Backward Compatibility)
+      const p_actors = item.nodes.filter((n:any) => n.type === 'actorNode' && n.id.startsWith('p_actor_')).map((n:any) => n.data.label);
+      const s_actors = item.nodes.filter((n:any) => n.type === 'actorNode' && n.id.startsWith('s_actor_')).map((n:any) => n.data.label);
+      const use_cases = item.nodes.filter((n:any) => n.type === 'useCaseNode').map((n:any) => ({ id: n.id, name: n.data.label }));
+      
+      const relationships = item.edges.map((e:any) => {
+         let type = "association";
+         if (e.label === "<<include>>") type = "include";
+         else if (e.label === "<<extend>>") type = "extend";
+         else if (e.label === "kế thừa" || e.label === "extends" || e.label === "generalization") type = "generalization";
+         
+         // Fix lại chiều của secondary_actor vì lúc vẽ ta đã đảo ngược source/target
+         let source = e.source;
+         let target = e.target;
+         if (target.startsWith('s_actor_')) {
+             source = e.target;
+             target = e.source;
+         }
+         return { source, target, type };
+      });
+      
+      setRawDiagramData({
+        primary_actors: p_actors,
+        secondary_actors: s_actors,
+        use_cases: use_cases,
+        relationships: relationships
+      });
+    }
+    
     setShowHistory(false);
   };
 
